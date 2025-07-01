@@ -1,0 +1,66 @@
+# --- Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-shoes-deployment
+  namespace: simple-http
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-shoes
+  template:
+    metadata:
+      labels:
+        app: my-shoes
+    spec:
+      containers:
+      - name: my-shoes
+        image: harshal001/my-shoes-app-clean:latest
+        ports:
+        - containerPort: 80
+
+---
+# --- Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-shoes-service
+  namespace: simple-http
+spec:
+  type: ClusterIP
+  selector:
+    app: my-shoes
+  ports:
+  - port: 8009        # internal cluster port
+    targetPort: 80    
+
+---
+# --- Ingress ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-shoes-ingress
+  namespace: simple-http
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/strip-path: "false"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: default-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: joshiharshal.cloud
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-shoes-service
+            port:
+              number: 8009
+  tls:
+    - hosts:
+        - joshiharshal.cloud
+      secretName: my-shoes-cert

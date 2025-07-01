@@ -1,0 +1,39 @@
+# --- Play 1: Run on remote K3s host ---
+- name: Install K3s and prepare kubeconfig
+  hosts: server
+  become: yes
+  tasks:
+    - name: Get public IP of the server
+      shell: curl -s http://checkip.amazonaws.com
+      register: public_ip
+
+    - name: Install K3s with TLS SAN and readable kubeconfig
+      shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--tls-san {{ public_ip.stdout }} --write-kubeconfig-mode 644" sh -
+
+    - name: Copy kubeconfig to remote home
+      command: cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/k3s.yaml
+
+    - name: Change ownership of kubeconfig
+      file:
+        path: /home/ubuntu/k3s.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Fetch kubeconfig to local machine
+      fetch:
+        src: /home/ubuntu/k3s.yaml
+        dest: ~/.kube/config
+        flat: yes
+
+# --- Play 2: Run locally to patch kubeconfig ---
+- name: Patch kubeconfig for local use
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Replace localhost with EC2 IP in kubeconfig
+      replace:
+        path: ~/.kube/config
+        regexp: 'server: https://127\.0\.0\.1:6443'
+        replace: "server: https://{{ groups['server'][0] }}:6443"
