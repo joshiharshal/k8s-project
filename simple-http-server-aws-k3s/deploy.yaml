@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simplehttp-deployment
+  namespace: simple-http
+spec:
+  selector:
+    matchLabels:
+      app: simplehttp
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: simplehttp
+    spec:
+      containers:
+      - name: simplehttp
+        image: pareshpawar/simple-http-server:latest
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8081
+---
+#Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: simplehttp-service
+  namespace: simple-http
+spec:
+  type: ClusterIP
+  selector:
+    app: simplehttp
+  ports:
+  - port: 8009
+    targetPort: 8081
+    #nodePort: 31000
+
+---
+#Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: simplehttp-ingress
+  namespace: simple-http
+  annotations:
+    spec.ingressClassName: traefik
+spec:
+  rules:
+  - host: shop.joshiharshal.cloud
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: simplehttp-service
+            port:
+              number: 8009

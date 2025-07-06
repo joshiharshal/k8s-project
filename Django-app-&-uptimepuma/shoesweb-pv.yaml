@@ -1,0 +1,169 @@
+# --- PersistentVolume: MEDIA ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-shoes-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: "/mnt/data/my-shoes/media"
+
+---
+# --- PersistentVolumeClaim: MEDIA ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-shoes-pvc
+  namespace: simple-http
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: manual
+
+---
+# --- PersistentVolume: DB ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-shoes-db-pv
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: db-storage
+  hostPath:
+    path: "/mnt/data/my-shoes/db"
+
+---
+# --- PersistentVolumeClaim: DB ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-shoes-db-pvc
+  namespace: simple-http
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: db-storage
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-shoes-deployment
+  namespace: simple-http
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-shoes
+  template:
+    metadata:
+      labels:
+        app: my-shoes
+    spec:
+      initContainers:
+      - name: collectstatic
+        image: harshal001/my-shoes-app-clean:latest
+        command: ["sh", "-c", "python3 manage.py collectstatic --noinput"]
+        workingDir: /app/Ecom
+        volumeMounts:
+        - name: static-volume
+          mountPath: /app/staticfiles
+
+      containers:
+      - name: my-shoes
+        image: harshal001/my-shoes-app-clean:latest
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: media-volume
+          mountPath: /app/Ecom/public/media
+        - name: db-volume
+          mountPath: /app/Ecom/db.sqlite3
+          subPath: db.sqlite3
+        - name: static-volume
+          mountPath: /app/staticfiles
+
+      volumes:
+      - name: media-volume
+        persistentVolumeClaim:
+          claimName: my-shoes-pvc
+      - name: db-volume
+        persistentVolumeClaim:
+          claimName: my-shoes-db-pvc
+      - name: static-volume
+        emptyDir: {}
+
+
+---
+# --- Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-shoes-service
+  namespace: simple-http
+spec:
+  type: ClusterIP
+  selector:
+    app: my-shoes
+  ports:
+  - port: 8009
+    targetPort: 80
+
+---
+# --- Ingress ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-shoes-ingress
+  namespace: simple-http
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/strip-path: "false"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: default-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: store.joshiharshal.cloud
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-shoes-service
+                port:
+                  number: 8009
+          - path: /media/
+            pathType: Prefix
+            backend:
+              service:
+                name: my-shoes-service
+                port:
+                  number: 8009
+          - path: /static/
+            pathType: Prefix
+            backend:
+              service:
+                name: my-shoes-service
+                port:
+                  number: 8009
+  tls:
+    - hosts:
+        - store.joshiharshal.cloud
+      secretName: my-shoes-cert
